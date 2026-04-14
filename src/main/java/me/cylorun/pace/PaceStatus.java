@@ -3,15 +3,15 @@ package me.cylorun.pace;
 import com.google.common.io.Resources;
 import me.cylorun.pace.gui.PaceStatusGUI;
 import me.cylorun.pace.rpc.DiscordStatus;
+import me.duncanruns.kerykeion.Kerykeion;
+import me.duncanruns.kerykeion.listeners.HermesWorldLogListener;
 import net.arikia.dev.drpc.DiscordRPC;
 import org.apache.logging.log4j.Level;
-import sun.jvm.hotspot.HelloWorld;
 import xyz.duncanruns.jingle.Jingle;
 import xyz.duncanruns.jingle.JingleAppLaunch;
 import xyz.duncanruns.jingle.gui.JingleGUI;
 import xyz.duncanruns.jingle.plugin.PluginEvents;
 import xyz.duncanruns.jingle.plugin.PluginManager;
-import xyz.duncanruns.jingle.util.ExceptionUtil;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -19,7 +19,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class PaceStatus {
     private static final ScheduledExecutorService EXECUTOR = Executors.newSingleThreadScheduledExecutor();
@@ -39,7 +38,6 @@ public class PaceStatus {
         PaceStatusOptions options = PaceStatusOptions.getInstance();
         DiscordStatus ds = new DiscordStatus(PaceStatus.CLIENT_ID);
 
-        AtomicInteger errorCounter = new AtomicInteger();
         AtomicBoolean hasInitialized = new AtomicBoolean(false);
 
         EXECUTOR.scheduleWithFixedDelay(() -> {
@@ -50,20 +48,19 @@ public class PaceStatus {
             try {
                 if (options.enabled) ds.update();
                 else DiscordRPC.discordClearPresence();
-
-                errorCounter.set(0);
             } catch (Throwable t) {
-                t.printStackTrace();
-                Jingle.log(Level.ERROR, ExceptionUtil.toDetailedString(t));
-                if (errorCounter.incrementAndGet() > 5) {
-                    DiscordRPC.discordClearPresence();
-                    Jingle.log(Level.ERROR, "Pace Status Error: " + ExceptionUtil.toDetailedString(t));
-                }
+                DiscordRPC.discordClearPresence();
+                Jingle.logError("Pace Status Error!", t);
             }
         }, 1, 10, TimeUnit.SECONDS);
 
-        PluginEvents.EXIT_WORLD.register(() -> PaceStatus.lastResetTime = System.currentTimeMillis());
+        Kerykeion.addListener((HermesWorldLogListener) (instanceInfo, entry, isNew) -> {
+            if (isNew && entry.get("type").getAsString().equals("leave")) {
+                PaceStatus.lastResetTime = System.currentTimeMillis();
+            }
+        }, 500, EXECUTOR);
 
+        PluginEvents.STOP.register(EXECUTOR::shutdown);
     }
 
     public static boolean isAfk() {
